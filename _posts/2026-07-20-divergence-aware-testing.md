@@ -2,7 +2,7 @@
 title: "Paper Reading: Divergence-Aware Testing of Graphics Shader Compiler Back-Ends"
 date: 2026-07-20
 tags:
-  - phd
+  - fuzzing
 ---
 
 ## Outline {#outline}

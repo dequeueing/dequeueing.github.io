@@ -5,19 +5,28 @@ tags:
   - compiler
 ---
 
+This post is my note for the LLVM Kaleidoscope tutorial. The tutorial builds a small language frontend step by step and uses LLVM to generate code.
+
+The first chapter is about the lexer. It is the smallest component in the compiler pipeline, but it is also the first place where raw source code becomes structured information.
+
 ## Outline {#outline}
 
-- [Preface](#preface)
-- [Chapter 1: Kaleidoscope Introduction and the Lexer](#chapter-1-kaleidoscope-introduction-and-the-lexer)
-- [The Lexer](#the-lexer)
+- [Why This Tutorial Matters](#why-this-tutorial-matters)
+- [What Kaleidoscope Is](#what-kaleidoscope-is)
+- [Where the Lexer Fits](#where-the-lexer-fits)
+- [Token Definitions](#token-definitions)
+- [How `gettok` Works](#how-gettok-works)
+- [Takeaways](#takeaways)
 
-## Preface {#preface}
+## Why This Tutorial Matters {#why-this-tutorial-matters}
 
-This tutorial will get you up and running fast and show a concrete example of something that **uses LLVM to generate code.**
+LLVM is a compiler infrastructure. It provides reusable building blocks for compiler construction, including IR, optimization passes, code generation, and JIT support.
 
-This tutorial introduces the simple “Kaleidoscope” language, building it iteratively over the course of several chapters, showing how it is built over time.
+LLVM itself does not know how to parse C, C++, or any other source language. For C/C++, that job is done by Clang. Clang is the frontend: it understands C/C++ syntax and translates source code into LLVM IR. LLVM then optimizes the IR and generates machine code.
 
-The tutorial outline:
+The Kaleidoscope tutorial is useful because it shows this pipeline on a small language that we can fully understand.
+
+The full tutorial covers:
 
 1. lexer, building a parser for a language.
 2. parser and AST.
@@ -31,26 +40,30 @@ The tutorial outline:
 
 By the end of the tutorial, we’ll have written a bit less than 1000 lines of non-comment, non-blank code. With this small amount of code, we’ll have built a nice little compiler for a non-trivial language, including a hand-written lexer, parser, AST, and code generation support, both static and JIT.
 
+## What Kaleidoscope Is {#what-kaleidoscope-is}
 
-> llvm 是一套用于构建 compiler 的基础设施和工具链，官方称其为 compiler infrastructure。llvm 本身不知道如何解析 c 或者其他语言。负责理解 C/C++ 语法的是 Clang。Clang 是 frontend，它把 C/C++ 代码转换为 LLVM IR；LLVM 再进行优化和机器代码生成。
+Kaleidoscope is a small *procedural* language. It supports function definitions, conditionals, math expressions, and later extensions such as loops, user-defined operators, JIT compilation, and debug information.
 
+The language is intentionally simple. Its only datatype is a 64-bit floating point number, equivalent to `double` in C.
 
-## Chapter 1: Kaleidoscope Introduction and the Lexer {#chapter-1-kaleidoscope-introduction-and-the-lexer}
+This simplicity is useful. It lets the tutorial focus on the compiler pipeline instead of language complexity.
 
-Kaleidoscope is a *procedural* language that allows you to define functions, use conditionals, math, etc.
+## Where the Lexer Fits {#where-the-lexer-fits}
 
-Over the course of the tutorial, we’ll extend Kaleidoscope to support the if/then/else construct, a for loop, user defined operators, JIT compilation with a simple command line interface, debug info, etc.
+When implementing a language, the first task is to process source text and recognize what it says.
 
-The only datatype in Kaleidoscope is a 64-bit floating point type, also known as `double` in C.
+The lexer, also called a scanner, breaks raw input text into **tokens**. A token is a small structured unit such as:
 
----
+- keyword: `def`, `extern`
+- identifier: `foo`, `bar`
+- number: `1.0`, `42`
+- operator or punctuation: `+`, `(`, `)`
 
-### The Lexer {#the-lexer}
+The parser will later consume these tokens and build an AST. So the lexer is the bridge between plain text and structured syntax.
 
+## Token Definitions {#token-definitions}
 
-When it comes to implementing a language, the first thing needed is the ability to process a text file and recognize what it says. 
-
-The traditional way to do this is to use a “lexer” (aka ‘scanner’) to break the input up into *“tokens”*. Each token returned by the lexer includes a *token code* and potentially some *metadata* (e.g. the numeric value of a number).
+The tutorial defines a small set of token codes:
 
 ```c
 // The lexer returns tokens [0-255] if it is an unknown character, otherwise one
@@ -72,15 +85,21 @@ static double NumVal;             // Filled in if tok_number
 
 ```
 
-- Each token returned by our lexer will either be one of the **Token enum values** or it will be an ‘unknown’ character like ‘+’, which is returned as its ASCII value.
-- If the current token is an identifier, the **IdentifierStr** global variable holds the name of the identifier. If the current token is a numeric literal (like 1.0), **NumVal** holds its value. 
+There are two important details.
 
----
+First, known token types use negative enum values such as `tok_def`, `tok_identifier`, and `tok_number`.
 
+Second, unknown single-character tokens such as `+` are returned as their ASCII values. This keeps the lexer simple.
 
-The actual implementation of the lexer is a single function named *gettok*. The gettok function is called to return the next token from standard input.
+When the current token is an identifier, `IdentifierStr` stores its name. When the current token is a numeric literal, `NumVal` stores its value.
 
-完整的 lexer 代码：
+![Token definitions](/images/blog/llvm-tutorial/token-def.png)
+
+## How `gettok` Works {#how-gettok-works}
+
+The actual lexer is a single function named `gettok`. Each call returns the next token from standard input.
+
+The full lexer code:
 
 ```c
 #include <cctype>
@@ -165,12 +184,36 @@ static int gettok() {
 }
 ```
 
-注释版：
+The function handles four main cases.
 
-![Token definitions](/images/blog/llvm-tutorial/token-def.png)
+First, it skips whitespace.
 
 ![gettok implementation](/images/blog/llvm-tutorial/gettok.png)
 
+Second, it recognizes identifiers and keywords. If the identifier is `def`, it returns `tok_def`. If it is `extern`, it returns `tok_extern`. Otherwise, it returns `tok_identifier`.
+
+Third, it recognizes numbers and stores the parsed value in `NumVal`.
+
 ![Number token handling](/images/blog/llvm-tutorial/number_token.png)
 
+Fourth, it skips comments that begin with `#`.
+
 ![Comment handling](/images/blog/llvm-tutorial/comment.png)
+
+If the character is none of the above, the lexer returns the character's ASCII value. This is how simple operators and punctuation are handled.
+
+## Takeaways {#takeaways}
+
+The lexer is small, but it shows the first key compiler idea:
+
+```text
+raw source text
+   ->
+tokens
+   ->
+parser
+   ->
+AST
+```
+
+For Kaleidoscope, the lexer only needs to understand identifiers, numbers, comments, keywords, and single-character operators. This is enough to support the next stage: building a parser and AST.

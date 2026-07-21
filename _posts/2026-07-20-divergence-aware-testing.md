@@ -21,6 +21,8 @@ The proposed tool, **ShaDiv**, uses these ideas to generate better test programs
 - [Evaluation](#evaluation)
 - [How I Understand This Paper](#how-i-understand-this-paper)
 - [Suggested Background](#suggested-background)
+- [Comparison with Prior Work](#comparison-with-prior-work)
+- [How to Think About Follow-up Work](#how-to-think-about-follow-up-work)
 
 ## The Problem {#the-problem}
 
@@ -203,3 +205,64 @@ Fuzzing 方面，需要理解 seed/corpus、mutation-based fuzzing、generation-
 可以先用 libFuzzer 做一个小实验，理解 harness、corpus 和 coverage feedback。然后快速阅读 AFL++ 文档，建立对 instrumentation、mutation、corpus minimization 和长期 fuzzing campaign 的认识。
 
 进入 compiler fuzzing 时，最值得先读的是 Csmith。它能解释为什么随机字节 mutation 不适合 compiler testing，为什么需要生成语法和类型正确的程序，以及为什么 undefined behavior 会破坏 oracle。
+
+
+## Comparison with Prior Work {#comparison-with-prior-work}
+
+The most useful way to understand ShaDiv is to compare it with earlier shader compiler testing work, especially [GLFuzz](https://www.doc.ic.ac.uk/~afd/papers/2017/OOPSLA.pdf) and [FShader](https://www.cse.ust.hk/~shuaiw/pldi-25.pdf).
+
+All three works test shader compilers, but they ask different research questions.
+
+GLFuzz (OOPSLA 2017) asks:
+
+> How can we test shader compilers in general when we do not have a reliable correctness oracle?
+
+ShaDiv (PLDI 2025) asks a different question:
+
+> Why do existing methods fail to reach shader compiler backends effectively, and how can we specifically trigger backend bugs?
+
+This difference is important. ShaDiv is not simply adding another feature to GLFuzz. It changes the evaluation target from "find shader compiler bugs" to "exercise and test backend-specific compiler mechanisms."
+
+| Dimension | GLFuzz | FShader | ShaDiv |
+| --- | --- | --- | --- |
+| Paper | *Automated Testing of Graphics Shader Compilers* | *Metamorphic Shader Fusion for Testing Graphics Shader Compilers* | *Divergence-Aware Testing of Graphics Shader Compiler Back-Ends* |
+| Year | OOPSLA 2017 | ICSE 2023 | PLDI 2025 |
+| Core problem | How to test shader compilers without a reliable oracle | How to construct more complex equivalent shaders than local mutation | How to specifically test shader compiler backends |
+| Testing scope | Whole shader compiler, black-box view | Whole shader compiler, black-box view | GPU-specific backend |
+| Input source | Real shader seeds | Two existing shaders | Generated shaders |
+| Input construction | Insert dead code, equivalent expressions, and redundant control flow into seeds | Fuse two shaders into one shader | Generate according to divergence and liveness properties |
+| Testing method | Metamorphic testing | Metamorphic testing | Differential testing |
+| Oracle | Original shader and equivalent variant should render the same image | Fused shader output should match the image-level combination of two original outputs | Different compilers or configurations should agree on the same shader |
+| Main controlled property | Source-level semantic equivalence | Shader fusion relation | Control-flow divergence, data-flow divergence, variable liveness |
+| Main insight | Equivalent programs can bypass the shader compiler oracle problem | Fusion creates more complex test inputs while preserving an oracle | Source-level diversity is not the same as backend-relevant diversity |
+| Backend awareness | Does not explicitly model backend behavior | Does not explicitly model backend behavior | Explicitly targets execution masks, register allocation, and related backend mechanisms |
+| Limitation | Mutations may be optimized away by front/middle-end; depends on seed quality | Fusion creates complex code but does not guarantee backend-specific coverage | Narrower target, mainly divergence/liveness-related backend behavior |
+| Relationship to prior work | Establishes the shader compiler metamorphic testing paradigm | Extends metamorphic relations from single-shader mutation to multi-shader fusion | Reframes the problem as backend-directed testing |
+
+## How to Think About Follow-up Work {#how-to-think-about-follow-up-work}
+
+A useful lesson from ShaDiv is how to think about follow-up research.
+
+When a paper looks complete, it usually means that it has solved the problem it chose to define. It does not mean the entire research space is closed.
+
+GLFuzz is complete for its own question:
+
+> Under unreliable oracles and GPU behavioral variance, how can we automatically find shader compiler errors?
+
+It answers this through semantics-preserving transformations, equivalent shader variants, image comparison, reduction, and large-scale real-device experiments.
+
+ShaDiv makes an assumption flip:
+
+> If GLFuzz can find shader compiler bugs, which compiler stage do these bugs actually exercise?
+
+This changes the metric. The question is no longer only "how many bugs did we find?" It becomes "did our tests actually reach and cover the compiler stage we care about?"
+
+This is a general pattern for reading papers. When a paper appears comprehensive, ask:
+
+- What claim does it make?
+- What metric supports that claim?
+- What proxy does the metric rely on?
+- What hidden assumption connects the proxy to the real goal?
+- What happens if we change the metric or the observation scale?
+
+ShaDiv's contribution comes from changing that observation scale: from whole-compiler black-box testing to backend-directed testing.
